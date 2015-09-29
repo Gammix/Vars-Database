@@ -1,5 +1,5 @@
 /*
-    PVars Database - SQLITE (savepvar.inc) - Build 5
+    PVars Database - SQLITE (savepvar.inc)
 	* This include allows you to save and load PVars into database which will have a table for saving/loading specified PVars.
 	* This is the best way and the fastest way to save and load a user database.
 
