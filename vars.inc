@@ -20,7 +20,7 @@ static DB:serverDB;
 {
 	serverDB = db_open("server.db");
 
-	db_free_result(db_query(serverDB, "CREATE TABLE IF NOT EXISTS `PVars` (`Varname` TEXT, `Vartype` INTEGER, `Varvalue` TEXT)"));
+	db_free_result(db_query(serverDB, "CREATE TABLE IF NOT EXISTS `PVars` (`Username` TEXT, `Varname` TEXT, `Vartype` INTEGER, `Varvalue` TEXT)"));
 	db_free_result(db_query(serverDB, "CREATE TABLE IF NOT EXISTS `SVars` (`Varname` TEXT, `Vartype` INTEGER, `Varvalue` TEXT)"));
 
 	#if ! defined FILTERSCRIPT
@@ -122,21 +122,20 @@ stock SavePVar(playerid, varname[])
 			GetPVarString(playerid, varname, value, sizeof (value));
     }
 
-	new query[300];
-	format(query, sizeof (query), "SELECT * FROM `PVars` WHERE `Varname` = '%s' AND `Username` = '%s'", varname, name);
+	new query[sizeof (value) + 256];
+	format(query, sizeof (query), "UPDATE `PVars` SET `Vartype` = '%i' AND `Varvalue` = '%s' WHERE `Varname` = '%s' AND `Username` = '%s'", type, value, varname, name);
 
     new DBResult:result = db_query(serverDB, query);
     if (db_num_rows(result))
 	{
 	    db_free_result(result);
-	    
-		format(query, sizeof (query), "UPDATE `PVars` SET `Vartype` = '%i' AND `Varvalue` = '%s' WHERE `Varname` = '%s' AND `Username` = '%s'", type, value, varname, name);
-	    db_free_result(db_query(serverDB, query));
 
 	    return true;
 	}
 	else
 	{
+	    db_free_result(result);
+
 		format(query, sizeof (query), "INSERT INTO `PVars`(`Username`, `Varname`, `Vartype`, `Varvalue`) VALUES('%s', '%s', '%i', '%s')", name, varname, type, value);
 
 	    result = db_query(serverDB, query);
@@ -154,13 +153,14 @@ stock LoadPVar(playerid, varname[])
 	new name[MAX_PLAYER_NAME];
 	GetPlayerName(playerid, name, MAX_PLAYER_NAME);
 
-	new query[300];
+	new value[3024];
+
+	new query[sizeof (value) + 256];
 	format(query, sizeof (query), "SELECT `Vartype` AND `Varvalue` FROM `PVars` WHERE `Varname` = '%s' AND `Username` = '%s' LIMIT 1", varname, name);
 
     new DBResult:result = db_query(serverDB, query);
     if (db_num_rows(result))
 	{
-	    new value[3024];
 	    db_get_field(result, 1, value, sizeof(value));
 
 		switch (db_get_field_int(result, 0))
@@ -181,8 +181,9 @@ stock LoadPVar(playerid, varname[])
 	}
 	else
 	{
+	    db_free_result(result);
+
 	    new type = GetPVarType(playerid, varname);
-	    new value[3024];
 
 	    switch (type)
 		{
@@ -223,16 +224,13 @@ stock SaveSVar(varname[])
 			GetSVarString(varname, value, sizeof (value));
     }
 
-	new query[300];
-	format(query, sizeof (query), "SELECT * FROM `SVars` WHERE `Varname` = '%s'", varname);
+	new query[sizeof (value) + 256];
+	format(query, sizeof (query), "UPDATE `SVars` SET `Vartype` = '%i' AND `Varvalue` = '%s' WHERE `Varname` = '%s'", type, value, varname);
 
     new DBResult:result = db_query(serverDB, query);
     if (db_num_rows(result))
 	{
 	    db_free_result(result);
-	    
-		format(query, sizeof (query), "UPDATE `SVars` SET `Vartype` = '%i' AND `Varvalue` = '%s' WHERE `Varname` = '%s'", type, value, varname);
-	    db_free_result(db_query(serverDB, query));
 	    
 	    return true;
 	}
@@ -252,13 +250,14 @@ stock SaveSVar(varname[])
 
 stock LoadSVar(varname[])
 {
-	new query[300];
+	new value[3024];
+
+	new query[sizeof (value) + 256];
 	format(query, sizeof (query), "SELECT `Vartype` AND `Varvalue` FROM `SVars` WHERE `Varname` = '%s' LIMIT 1", varname);
 
     new DBResult:result = db_query(serverDB, query);
     if (db_num_rows(result))
 	{
-	    new value[3024];
 	    db_get_field(result, 1, value, sizeof(value));
 
 		switch (db_get_field_int(result, 0))
@@ -280,7 +279,6 @@ stock LoadSVar(varname[])
 	else
 	{
 	    new type = GetSVarType(varname);
-	    new value[3024];
 
 	    switch (type)
 		{
