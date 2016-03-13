@@ -105,200 +105,157 @@ static DB:serverDB;
 
 stock SavePVar(playerid, varname[])
 {
+	const SIZE = 1024;
+	new value[SIZE];
+	
 	new name[MAX_PLAYER_NAME];
 	GetPlayerName(playerid, name, MAX_PLAYER_NAME);
 
 	new type = GetPVarType(playerid, varname);
-	new value[3024];
+
     switch (type)
 	{
 		case PLAYER_VARTYPE_INT:
 			valstr(value, GetPVarInt(playerid, varname));
 
 		case PLAYER_VARTYPE_FLOAT:
-		    format(value, sizeof (value), "%f", GetPVarFloat(playerid, varname));
+		    format(value, SIZE, "%f", GetPVarFloat(playerid, varname));
 
 		case PLAYER_VARTYPE_STRING:
-			GetPVarString(playerid, varname, value, sizeof (value));
+			GetPVarString(playerid, varname, value, SIZE);
+
+		default:
+		    return false;
     }
 
-	new query[sizeof (value) + 256];
-	format(query, sizeof (query), "UPDATE `PVars` SET `Vartype` = '%i' AND `Varvalue` = '%s' WHERE `Varname` = '%s' AND `Username` = '%s'", type, value, varname, name);
+	new query[SIZE + 256];
+	format(query, sizeof (query), "SELECT * FROM `PVars` WHERE `Varname` = '%s' AND `Username` = '%s'", varname, name);
 
     new DBResult:result = db_query(serverDB, query);
-    if (db_num_rows(result))
-	{
-	    db_free_result(result);
-
-	    return true;
-	}
+    if (db_num_rows(result) >= 1)
+		format(query, sizeof (query), "UPDATE `PVars` SET `Vartype` = '%i' AND `Varvalue` = '%s' WHERE `Varname` = '%s' AND `Username` = '%s'", type, value, varname, name);
 	else
-	{
-	    db_free_result(result);
-
 		format(query, sizeof (query), "INSERT INTO `PVars`(`Username`, `Varname`, `Vartype`, `Varvalue`) VALUES('%s', '%s', '%i', '%s')", name, varname, type, value);
 
-	    result = db_query(serverDB, query);
-	    if (result)
-		{
-		    db_free_result(result);
-		    return true;
-		}
-		else return false;
+	db_free_result(result);
+
+	result = db_query(serverDB, query);
+	if (result)
+	{
+	    db_free_result(result);
+		return true;
 	}
+	else
+ 		return false;
 }
 
 stock LoadPVar(playerid, varname[])
 {
+	const SIZE = 1024;
+	
 	new name[MAX_PLAYER_NAME];
 	GetPlayerName(playerid, name, MAX_PLAYER_NAME);
 
-	new value[3024];
-
-	new query[sizeof (value) + 256];
-	format(query, sizeof (query), "SELECT `Vartype` AND `Varvalue` FROM `PVars` WHERE `Varname` = '%s' AND `Username` = '%s' LIMIT 1", varname, name);
+	new query[SIZE + 256];
+	format(query, sizeof (query), "SELECT * FROM `PVars` WHERE `Varname` = '%s' AND `Username` = '%s'", varname, name);
 
     new DBResult:result = db_query(serverDB, query);
-    if (db_num_rows(result))
+    if (db_num_rows(result) >= 1)
 	{
-	    db_get_field(result, 1, value, sizeof(value));
-
-		switch (db_get_field_int(result, 0))
+		switch (db_get_field_int(result, 2))
 		{
 			case PLAYER_VARTYPE_INT:
-				SetPVarInt(playerid, varname, strval(value));
+				SetPVarInt(playerid, varname, db_get_field_int(result, 3));
 
 			case PLAYER_VARTYPE_FLOAT:
-				SetPVarFloat(playerid, varname, floatstr(value));
+				SetPVarFloat(playerid, varname, db_get_field_float(result, 3));
 
 			case PLAYER_VARTYPE_STRING:
+			{
+				new value[SIZE];
+				db_get_field(result, 3, value, sizeof(value));
 				SetPVarString(playerid, varname, value);
+			}
 		}
 
 		db_free_result(result);
 
 		return true;
 	}
-	else
-	{
-	    db_free_result(result);
 
-	    new type = GetPVarType(playerid, varname);
-
-	    switch (type)
-		{
-			case PLAYER_VARTYPE_INT:
-				valstr(value, GetPVarInt(playerid, varname));
-
-			case PLAYER_VARTYPE_FLOAT:
-			    format(value, sizeof (value), "%f", GetPVarFloat(playerid, varname));
-
-			case PLAYER_VARTYPE_STRING:
-				GetPVarString(playerid, varname, value, sizeof (value));
-	    }
-		format(query, sizeof (query), "INSERT INTO `PVars`(`Username`, `Varname`, `Vartype`, `Varvalue`) VALUES('%s', '%s', '%i', '%s')", name, varname, type, value);
-
-	    result = db_query(serverDB, query);
-	    if (result)
-		{
-		    db_free_result(result);
-		    return true;
-		}
-		else return false;
-	}
+	return false;
 }
 
 stock SaveSVar(varname[])
 {
+	const SIZE = 1024;
+	new value[SIZE];
+
 	new type = GetSVarType(varname);
-	new value[3024];
+
     switch (type)
 	{
 		case SERVER_VARTYPE_INT:
 			valstr(value, GetSVarInt(varname));
 
 		case SERVER_VARTYPE_FLOAT:
-		    format(value, sizeof (value), "%f", GetSVarFloat(varname));
+		    format(value, SIZE, "%f", GetSVarFloat(varname));
 
 		case SERVER_VARTYPE_STRING:
-			GetSVarString(varname, value, sizeof (value));
+			GetSVarString(varname, value, SIZE);
     }
 
-	new query[sizeof (value) + 256];
-	format(query, sizeof (query), "UPDATE `SVars` SET `Vartype` = '%i' AND `Varvalue` = '%s' WHERE `Varname` = '%s'", type, value, varname);
+	new query[SIZE + 256];
+	format(query, SIZE, "SELECT * FROM `SVars` WHERE `Varname` = '%s'", value, varname);
 
     new DBResult:result = db_query(serverDB, query);
-    if (db_num_rows(result))
+    if (db_num_rows(result) >= 1)
+		format(query, SIZE, "UPDATE `SVars` SET `Vartype` = '%i' AND `Varvalue` = '%s' WHERE `Varname` = '%s'", type, value, varname);
+	else
+		format(query, SIZE, "INSERT INTO `SVars`(`Varname`, `Vartype`, `Varvalue`) VALUES('%s', '%i', '%s')", varname, type, value);
+
+	db_free_result(result);
+
+	result = db_query(serverDB, query);
+	if (result)
 	{
 	    db_free_result(result);
-	    
-	    return true;
+		return true;
 	}
 	else
-	{
-		format(query, sizeof (query), "INSERT INTO `SVars`(`Varname`, `Vartype`, `Varvalue`) VALUES('%s', '%i', '%s')", varname, type, value);
-
-	    result = db_query(serverDB, query);
-	    if (result)
-		{
-		    db_free_result(result);
-		    return true;
-		}
-		else return false;
-	}
+ 		return false;
 }
 
 stock LoadSVar(varname[])
 {
-	new value[3024];
+	const SIZE = 1024;
 
-	new query[sizeof (value) + 256];
-	format(query, sizeof (query), "SELECT `Vartype` AND `Varvalue` FROM `SVars` WHERE `Varname` = '%s' LIMIT 1", varname);
+	new query[SIZE + 256];
+	format(query, SIZE, "SELECT * FROM `SVars` WHERE `Varname` = '%s'", varname);
 
     new DBResult:result = db_query(serverDB, query);
-    if (db_num_rows(result))
+    if (db_num_rows(result) >= 1)
 	{
-	    db_get_field(result, 1, value, sizeof(value));
-
-		switch (db_get_field_int(result, 0))
+		switch (db_get_field_int(result, 2))
 		{
 			case SERVER_VARTYPE_INT:
-				SetSVarInt(varname, strval(value));
+				SetSVarInt(varname, db_get_field_int(result, 3));
 
 			case SERVER_VARTYPE_FLOAT:
-				SetSVarFloat(varname, floatstr(value));
+				SetSVarFloat(varname, db_get_field_float(result, 3));
 
 			case SERVER_VARTYPE_STRING:
+			{
+				new value[SIZE];
+ 				db_get_field(result, 3, value, SIZE);
 				SetSVarString(varname, value);
+			}
 		}
 
 		db_free_result(result);
 
 		return true;
 	}
-	else
-	{
-	    new type = GetSVarType(varname);
 
-	    switch (type)
-		{
-			case SERVER_VARTYPE_INT:
-				valstr(value, GetSVarInt(varname));
-
-			case SERVER_VARTYPE_FLOAT:
-			    format(value, sizeof (value), "%f", GetSVarFloat(varname));
-
-			case SERVER_VARTYPE_STRING:
-				GetSVarString(varname, value, sizeof (value));
-	    }
-		format(query, sizeof (query), "INSERT INTO `SVars`(`Varname`, `Vartype`, `Varvalue`) VALUES('%s', '%i', '%s')", varname, type, value);
-
-	    result = db_query(serverDB, query);
-	    if (result)
-		{
-		    db_free_result(result);
-		    return true;
-		}
-		else return false;
-	}
+	return false;
 }
