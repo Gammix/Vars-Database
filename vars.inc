@@ -1,16 +1,40 @@
 /*
  * In memory database (vars.inc)
- * Lets you save and load your choice of variables (PVars/SVars) at anytime. Powered by SQLite!
+ * Lets you save and load your choice of variables (PVars/SVars) at anytime. Powered by SQLite and MySQL!
  *
  * By Gammix
  *
- * native SavePVar(playerid, varname[]);
- * native LoadPVar(playerid, varname[]);
- * native SaveSVar(varname[]);
- * native LoadSVar(varname[]);
+ * native SavePVar(playerid, varname[], bool:db_type_sqlite = true);
+ * native LoadPVar(playerid, varname[], bool:db_type_sqlite = true);
+ * native SaveSVar(varname[], bool:db_type_sqlite = true);
+ * native LoadSVar(varname[], bool:db_type_sqlite = true);
  */
+ 
+#if ! defined mysql_included
+	#tryinclude <a_mysql>
+#endif
 
-static DB:serverDB;
+#if defined mysql_included
+	#if ! defined MYSQL_HOST
+		#define MYSQL_HOST "localhost"
+	#endif
+
+	#if ! defined MYSQL_USER
+		#define MYSQL_USER "admin"
+	#endif
+
+	#if ! defined MYSQL_DATABASE
+		#define MYSQL_DATABASE "server"
+	#endif
+
+	#if ! defined MYSQL_PASSWORD
+		#define MYSQL_PASSWORD "admin"
+	#endif
+
+	static mysql;
+#endif
+
+static DB:sqlite;
 
 #if ! defined FILTERSCRIPT
 	public OnGameModeInit()
@@ -18,11 +42,17 @@ static DB:serverDB;
 	public OnFilterScriptInit()
 #endif
 {
-	serverDB = db_open("server.db");
+	sqlite = db_open("server.db");
 
-	db_free_result(db_query(serverDB, "CREATE TABLE IF NOT EXISTS `PVars` (`Username` TEXT, `Varname` TEXT, `Vartype` INTEGER, `Varvalue` TEXT)"));
-	db_free_result(db_query(serverDB, "CREATE TABLE IF NOT EXISTS `SVars` (`Varname` TEXT, `Vartype` INTEGER, `Varvalue` TEXT)"));
+	db_free_result(db_query(sqlite, "CREATE TABLE IF NOT EXISTS `PVars` (`Username` TEXT, `Varname` TEXT, `Vartype` INTEGER, `Varvalue` TEXT)"));
+	db_free_result(db_query(sqlite, "CREATE TABLE IF NOT EXISTS `SVars` (`Varname` TEXT, `Vartype` INTEGER, `Varvalue` TEXT)"));
 
+	#if defined mysql_included
+		mysql = mysql_connect(MYSQL_HOST, MYSQL_USER, MYSQL_DATABASE, MYSQL_PASSWORD);
+	    mysql_query(mysql, "CREATE TABLE IF NOT EXISTS `PVars` (`Username` TEXT, `Varname` TEXT, `Vartype` INTEGER, `Varvalue` TEXT)", false);
+	    mysql_query(mysql, "CREATE TABLE IF NOT EXISTS `SVars` (`Varname` TEXT, `Vartype` INTEGER, `Varvalue` TEXT)", false);
+	#endif
+	
 	#if ! defined FILTERSCRIPT
 		#if defined SS_OnGameModeInit
 			return SS_OnGameModeInit();
@@ -65,8 +95,12 @@ static DB:serverDB;
 	public OnFilterScriptExit()
 #endif
 {
-	db_close(serverDB);
+	db_close(sqlite);
 
+	#if defined mysql_included
+		mysql_close(mysql);
+	#endif
+	
 	#if ! defined FILTERSCRIPT
 		#if defined SS_OnGameModeExit
 			return SS_OnGameModeExit();
@@ -103,11 +137,11 @@ static DB:serverDB;
 	#endif
 #endif
 
-stock SavePVar(playerid, varname[])
+stock SavePVar(playerid, varname[], bool:db_type_sqlite = true)
 {
 	const SIZE = 1024;
 	new value[SIZE];
-	
+
 	new name[MAX_PLAYER_NAME];
 	GetPlayerName(playerid, name, MAX_PLAYER_NAME);
 
@@ -129,64 +163,133 @@ stock SavePVar(playerid, varname[])
     }
 
 	new query[SIZE + 256];
-	format(query, sizeof (query), "SELECT * FROM `PVars` WHERE `Varname` = '%s' AND `Username` = '%s'", varname, name);
 
-    new DBResult:result = db_query(serverDB, query);
-    if (db_num_rows(result) >= 1)
-		format(query, sizeof (query), "UPDATE `PVars` SET `Vartype` = '%i' AND `Varvalue` = '%s' WHERE `Varname` = '%s' AND `Username` = '%s'", type, value, varname, name);
-	else
-		format(query, sizeof (query), "INSERT INTO `PVars`(`Username`, `Varname`, `Vartype`, `Varvalue`) VALUES('%s', '%s', '%i', '%s')", name, varname, type, value);
+    if (! db_type_sqlite)
+    {
+    	#if defined mysql_included
+			mysql_format(mysql, query, sizeof (query), "SELECT * FROM `PVars` WHERE `Varname` = '%e' AND `Username` = '%e'", varname, name);
+	
+            new Cache:result = mysql_query(mysql, query);
+			if (cache_get_row_count(mysql) >= 1)
+				mysql_format(mysql, query, sizeof (query), "UPDATE `PVars` SET `Vartype` = '%i' AND `Varvalue` = '%e' WHERE `Varname` = '%e' AND `Username` = '%e'", type, value, varname, name);
+			else
+				mysql_format(mysql, query, sizeof (query), "INSERT INTO `PVars`(`Username`, `Varname`, `Vartype`, `Varvalue`) VALUES('%e', '%e', '%i', '%e')", name, varname, type, value);
 
-	db_free_result(result);
-
-	result = db_query(serverDB, query);
-	if (result)
-	{
-	    db_free_result(result);
-		return true;
+			cache_delete(result, mysql);
+			
+			result = mysql_query(mysql, query);
+			if (result)
+			{
+			    cache_delete(result, mysql);
+				return true;
+			}
+  	 	#endif
 	}
 	else
- 		return false;
-}
-
-stock LoadPVar(playerid, varname[])
-{
-	const SIZE = 1024;
-	
-	new name[MAX_PLAYER_NAME];
-	GetPlayerName(playerid, name, MAX_PLAYER_NAME);
-
-	new query[SIZE + 256];
-	format(query, sizeof (query), "SELECT * FROM `PVars` WHERE `Varname` = '%s' AND `Username` = '%s'", varname, name);
-
-    new DBResult:result = db_query(serverDB, query);
-    if (db_num_rows(result) >= 1)
 	{
-		switch (db_get_field_int(result, 2))
-		{
-			case PLAYER_VARTYPE_INT:
-				SetPVarInt(playerid, varname, db_get_field_int(result, 3));
-
-			case PLAYER_VARTYPE_FLOAT:
-				SetPVarFloat(playerid, varname, db_get_field_float(result, 3));
-
-			case PLAYER_VARTYPE_STRING:
-			{
-				new value[SIZE];
-				db_get_field(result, 3, value, sizeof(value));
-				SetPVarString(playerid, varname, value);
-			}
-		}
+		format(query, sizeof (query), "SELECT * FROM `PVars` WHERE `Varname` = '%q' AND `Username` = '%q'", varname, name);
+	
+		new DBResult:result = db_query(sqlite, query);
+		if (db_num_rows(result) >= 1)
+			format(query, sizeof (query), "UPDATE `PVars` SET `Vartype` = '%i' AND `Varvalue` = '%q' WHERE `Varname` = '%q' AND `Username` = '%q'", type, value, varname, name);
+		else
+			format(query, sizeof (query), "INSERT INTO `PVars`(`Username`, `Varname`, `Vartype`, `Varvalue`) VALUES('%q', '%q', '%i', '%q')", name, varname, type, value);
 
 		db_free_result(result);
 
-		return true;
+		result = db_query(sqlite, query);
+		if (result)
+		{
+		    db_free_result(result);
+			return true;
+		}
 	}
 
 	return false;
 }
 
-stock SaveSVar(varname[])
+stock LoadPVar(playerid, varname[], bool:db_type_sqlite = true)
+{
+	const SIZE = 1024;
+
+	new name[MAX_PLAYER_NAME];
+	GetPlayerName(playerid, name, MAX_PLAYER_NAME);
+
+	new query[SIZE + 256];
+
+    if (! db_type_sqlite)
+    {
+		#if defined mysql_included
+			mysql_format(mysql, query, sizeof (query), "SELECT * FROM `PVars` WHERE `Varname` = '%e' AND `Username` = '%e'", varname, name);
+			
+            new Cache:result = mysql_query(mysql, query);
+            if (result)
+			{
+				if (cache_get_row_count(mysql) >= 1)
+				{
+					switch (cache_get_row_int(0, 2, mysql))
+					{
+						case PLAYER_VARTYPE_INT:
+							SetPVarInt(playerid, varname, cache_get_row_int(0, 3, mysql));
+
+						case PLAYER_VARTYPE_FLOAT:
+							SetPVarFloat(playerid, varname, cache_get_row_float(0, 3, mysql));
+
+						case PLAYER_VARTYPE_STRING:
+						{
+							new value[SIZE];
+							cache_get_row(0, 3, value, mysql, SIZE);
+							SetPVarString(playerid, varname, value);
+						}
+					}
+
+                    cache_delete(result, mysql);
+
+					return true;
+				}
+
+				cache_delete(result, mysql);
+			}
+		#endif
+   	}
+   	else
+   	{
+		format(query, sizeof (query), "SELECT * FROM `PVars` WHERE `Varname` = '%q' AND `Username` = '%q'", varname, name);
+		
+	    new DBResult:result = db_query(sqlite, query);
+     	if (result)
+		{
+		    if (db_num_rows(result) >= 1)
+			{
+				switch (db_get_field_int(result, 2))
+				{
+					case PLAYER_VARTYPE_INT:
+						SetPVarInt(playerid, varname, db_get_field_int(result, 3));
+
+					case PLAYER_VARTYPE_FLOAT:
+						SetPVarFloat(playerid, varname, db_get_field_float(result, 3));
+
+					case PLAYER_VARTYPE_STRING:
+					{
+						new value[SIZE];
+						db_get_field(result, 3, value, SIZE);
+						SetPVarString(playerid, varname, value);
+					}
+				}
+
+				db_free_result(result);
+
+				return true;
+			}
+			
+			db_free_result(result);
+		}
+	}
+	
+	return false;
+}
+
+stock SaveSVar(varname[], bool:db_type_sqlite = true)
 {
 	const SIZE = 1024;
 	new value[SIZE];
@@ -206,55 +309,124 @@ stock SaveSVar(varname[])
     }
 
 	new query[SIZE + 256];
-	format(query, SIZE, "SELECT * FROM `SVars` WHERE `Varname` = '%s'", value, varname);
 
-    new DBResult:result = db_query(serverDB, query);
-    if (db_num_rows(result) >= 1)
-		format(query, SIZE, "UPDATE `SVars` SET `Vartype` = '%i' AND `Varvalue` = '%s' WHERE `Varname` = '%s'", type, value, varname);
-	else
-		format(query, SIZE, "INSERT INTO `SVars`(`Varname`, `Vartype`, `Varvalue`) VALUES('%s', '%i', '%s')", varname, type, value);
+    if (! db_type_sqlite)
+    {
+    	#if defined mysql_included
+			mysql_format(mysql, query, sizeof (query), "SELECT * FROM `SVars` WHERE `Varname` = '%e'", varname);
 
-	db_free_result(result);
+            new Cache:result = mysql_query(mysql, query);
+			if (cache_get_row_count(mysql) >= 1)
+				mysql_format(mysql, query, sizeof (query), "UPDATE `SVars` SET `Vartype` = '%i' AND `Varvalue` = '%e' WHERE `Varname` = '%e'", type, value, varname);
+			else
+				mysql_format(mysql, query, sizeof (query), "INSERT INTO `SVars`(`Varname`, `Vartype`, `Varvalue`) VALUES('%e', '%i', '%e')", varname, type, value);
 
-	result = db_query(serverDB, query);
-	if (result)
-	{
-	    db_free_result(result);
-		return true;
+			cache_delete(result, mysql);
+
+			result = mysql_query(mysql, query);
+			if (result)
+			{
+			    cache_delete(result, mysql);
+				return true;
+			}
+  	 	#endif
 	}
 	else
- 		return false;
+	{
+		format(query, sizeof (query), "SELECT * FROM `SVars` WHERE `Varname` = '%q'", varname);
+
+		new DBResult:result = db_query(sqlite, query);
+		if (db_num_rows(result) >= 1)
+			format(query, sizeof (query), "UPDATE `SVars` SET `Vartype` = '%i' AND `Varvalue` = '%q' WHERE `Varname` = '%q'", type, value, varname);
+		else
+			format(query, sizeof (query), "INSERT INTO `SVars`(`Varname`, `Vartype`, `Varvalue`) VALUES('%q', '%i', '%q')", varname, type, value);
+
+		db_free_result(result);
+
+		result = db_query(sqlite, query);
+		if (result)
+		{
+		    db_free_result(result);
+			return true;
+		}
+	}
+
+	return false;
 }
 
-stock LoadSVar(varname[])
+stock LoadSVar(varname[], bool:db_type_sqlite = true)
 {
 	const SIZE = 1024;
 
 	new query[SIZE + 256];
-	format(query, SIZE, "SELECT * FROM `SVars` WHERE `Varname` = '%s'", varname);
 
-    new DBResult:result = db_query(serverDB, query);
-    if (db_num_rows(result) >= 1)
-	{
-		switch (db_get_field_int(result, 2))
-		{
-			case SERVER_VARTYPE_INT:
-				SetSVarInt(varname, db_get_field_int(result, 3));
+    if (! db_type_sqlite)
+    {
+		#if defined mysql_included
+			mysql_format(mysql, query, sizeof (query), "SELECT * FROM `SVars` WHERE `Varname` = '%e'", varname);
 
-			case SERVER_VARTYPE_FLOAT:
-				SetSVarFloat(varname, db_get_field_float(result, 3));
-
-			case SERVER_VARTYPE_STRING:
+            new Cache:result = mysql_query(mysql, query);
+            if (result)
 			{
-				new value[SIZE];
- 				db_get_field(result, 3, value, SIZE);
-				SetSVarString(varname, value);
+				if (cache_get_row_count(mysql) >= 1)
+				{
+					switch (cache_get_row_int(0, 1, mysql))
+					{
+						case PLAYER_VARTYPE_INT:
+							SetSVarInt(varname, cache_get_row_int(0, 2, mysql));
+
+						case PLAYER_VARTYPE_FLOAT:
+							SetSVarFloat(varname, cache_get_row_float(0, 2, mysql));
+
+						case PLAYER_VARTYPE_STRING:
+						{
+							new value[SIZE];
+							cache_get_row(0, 2, value, mysql, SIZE);
+							SetSVarString(varname, value);
+						}
+					}
+
+                    cache_delete(result, mysql);
+
+					return true;
+				}
+
+				cache_delete(result, mysql);
 			}
+		#endif
+   	}
+   	else
+   	{
+		format(query, sizeof (query), "SELECT * FROM `SVars` WHERE `Varname` = '%q'", varname);
+
+	    new DBResult:result = db_query(sqlite, query);
+     	if (result)
+		{
+		    if (db_num_rows(result) >= 1)
+			{
+				switch (db_get_field_int(result, 1))
+				{
+					case PLAYER_VARTYPE_INT:
+						SetSVarInt(varname, db_get_field_int(result, 2));
+
+					case PLAYER_VARTYPE_FLOAT:
+						SetSVarFloat(varname, db_get_field_float(result, 2));
+
+					case PLAYER_VARTYPE_STRING:
+					{
+						new value[SIZE];
+						db_get_field(result, 2, value, SIZE);
+						SetSVarString(varname, value);
+					}
+				}
+
+				db_free_result(result);
+
+				return true;
+			}
+
+			db_free_result(result);
 		}
-
-		db_free_result(result);
-
-		return true;
 	}
 
 	return false;
